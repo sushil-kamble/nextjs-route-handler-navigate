@@ -251,6 +251,96 @@ function cleanupEmptyDirectories(dirPath: string, appDirPath: string): void {
   }
 }
 
+// Add this function to clean up orphaned directories
+function cleanupOrphanedDirectories(appDirPath: string): void {
+  if (!appDirPath || !fs.existsSync(appDirPath)) {
+    return;
+  }
+
+  try {
+    // Get all directories under app directory
+    const validDirectories = new Set<string>();
+    const allDirectories = new Set<string>();
+
+    // First build a list of valid directories that contain route files
+    function collectValidDirectories(dirPath: string, basePath: string) {
+      if (!fs.existsSync(dirPath)) return;
+
+      try {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+        // Add current directory to all directories list
+        const relPath = path.relative(basePath, dirPath);
+        if (relPath) {
+          allDirectories.add(dirPath);
+        }
+
+        // Check if this directory contains a valid route file
+        let hasRouteFile = false;
+
+        for (const entry of entries) {
+          const entryPath = path.join(dirPath, entry.name);
+
+          if (
+            entry.isDirectory() &&
+            !["node_modules", ".next", ".git"].includes(entry.name) &&
+            !entry.name.startsWith("_")
+          ) {
+            // Process subdirectories
+            collectValidDirectories(entryPath, basePath);
+          } else if (/^route\.(js|ts|jsx|tsx)$/.test(entry.name)) {
+            // Found a route file, mark directory as valid
+            validDirectories.add(dirPath);
+            hasRouteFile = true;
+            break;
+          }
+        }
+
+        // If this directory or any parent contains a route file, mark it as valid
+        if (hasRouteFile) {
+          let currentDir = dirPath;
+          while (currentDir !== basePath) {
+            validDirectories.add(currentDir);
+            currentDir = path.dirname(currentDir);
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing directory ${dirPath}:`, error);
+      }
+    }
+
+    // Collect all directories and valid directories
+    collectValidDirectories(appDirPath, appDirPath);
+
+    // Clean up all directories that don't have route files
+    const dirArray = Array.from(allDirectories);
+
+    // Sort by depth (deepest first) to ensure we process children before parents
+    dirArray.sort((a, b) => {
+      const depthA = a.split(path.sep).length;
+      const depthB = b.split(path.sep).length;
+      return depthB - depthA; // Descending order
+    });
+
+    // Clean up empty directories that don't contain route files
+    for (const dir of dirArray) {
+      if (!validDirectories.has(dir)) {
+        try {
+          // Check if directory exists and is empty
+          if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+            console.log(`Cleaning up orphaned directory: ${dir}`);
+            fs.rmdirSync(dir);
+          }
+        } catch (error) {
+          console.error(`Error cleaning up directory ${dir}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error in cleanup process:", error);
+  }
+}
+
 // Helper function to detect file type
 function detectProjectFileType(appDirPath: string): string {
   // Check if TypeScript is used in the project
@@ -354,6 +444,9 @@ async function renameRoute(appDirPath: string, node: RouteNode): Promise<void> {
     const sourceDir = path.dirname(sourceFilePath);
     const fileName = path.basename(sourceFilePath);
 
+    // Track original source directory for cleanup
+    const originalSourceDir = sourceDir;
+
     // Construct the target directory path
     const relativePath = getRelativePathFromAppDir(appDirPath, sourceDir);
     const relativeSegments = relativePath.split(path.sep).filter(Boolean);
@@ -401,6 +494,14 @@ async function renameRoute(appDirPath: string, node: RouteNode): Promise<void> {
     const targetDir = path.join(appDirPath, targetDirRelative);
     const targetFilePath = path.join(targetDir, fileName);
 
+    // Check if source and target are the same
+    if (path.relative(sourceDir, targetDir) === "") {
+      vscode.window.showInformationMessage(
+        "The route path didn't change the actual file location."
+      );
+      return;
+    }
+
     // Check if target directory already exists
     if (fs.existsSync(targetDir)) {
       // Check if target file already exists
@@ -418,24 +519,27 @@ async function renameRoute(appDirPath: string, node: RouteNode): Promise<void> {
 
         // Merge the HTTP methods from source file to target file
         await mergeRouteFiles(sourceFilePath, targetFilePath);
-
-        // Remove source file after merging
-        fs.unlinkSync(sourceFilePath);
       } else {
         // Target dir exists but file doesn't, simply move the file
         ensureDirectoryExists(targetDir);
         fs.copyFileSync(sourceFilePath, targetFilePath);
-        fs.unlinkSync(sourceFilePath);
       }
     } else {
-      // Create target directory and move file
+      // Create target directory and copy file
       ensureDirectoryExists(targetDir);
       fs.copyFileSync(sourceFilePath, targetFilePath);
+    }
+
+    // Now remove the source file after successful copy
+    if (fs.existsSync(sourceFilePath)) {
       fs.unlinkSync(sourceFilePath);
     }
 
-    // Clean up empty directories recursively
-    cleanupEmptyDirectories(sourceDir, appDirPath);
+    // Clean up empty directories recursively after moving the file
+    // Start from the original source directory to ensure proper cleanup
+    if (appDirPath) {
+      cleanupEmptyDirectories(originalSourceDir, appDirPath);
+    }
 
     // Refresh the routes tree view
     vscode.commands.executeCommand("nextjs-navigator.refreshRoutes");
@@ -652,12 +756,27 @@ export function activate(context: vscode.ExtensionContext) {
     false
   );
 
+  // Add a Git watcher to detect when HEAD changes (indicating Git operations)
+  const gitWatcher = vscode.workspace.createFileSystemWatcher(
+    "**/.git/{HEAD,index}",
+    false,
+    false,
+    false
+  );
+
   watcher.onDidCreate(debouncedRefresh);
   watcher.onDidChange(debouncedRefresh);
   watcher.onDidDelete(debouncedRefresh);
 
+  // Trigger refresh when Git operations occur
+  gitWatcher.onDidChange(() => {
+    console.log("Git operation detected, refreshing routes");
+    setTimeout(nextJsRoutesProvider.refresh.bind(nextJsRoutesProvider), 500);
+  });
+
   context.subscriptions.push(
     watcher,
+    gitWatcher,
     vscode.commands.registerCommand("nextjs-navigator.refreshRoutes", () => {
       nextJsRoutesProvider.refresh();
     }),
@@ -899,6 +1018,12 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
     this.visitedDirs.clear();
     this.routes = [];
     this.findAppDirectory();
+
+    // Add cleanup of orphaned directories before scanning routes
+    if (this.appDirPath) {
+      cleanupOrphanedDirectories(this.appDirPath);
+    }
+
     this.scanAllRoutes();
     this._onDidChangeTreeData.fire();
   }
