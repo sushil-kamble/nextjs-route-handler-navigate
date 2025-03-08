@@ -143,7 +143,6 @@ class RouteNode extends vscode.TreeItem {
       case RouteNodeType.HttpMethod:
         this.contextValue = "httpMethod";
         this.iconPath = new vscode.ThemeIcon("symbol-method");
-        this.description = `${label} method`;
         break;
     }
   }
