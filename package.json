@@ -1,8 +1,8 @@
 {
   "name": "nextjs-navigator",
   "displayName": "Next.js Navigator",
-  "description": "Navigate through Next.js app directory routes and route handlers",
-  "version": "0.0.1",
+  "description": "Next.js App Router navigation with support for all route types: dynamic routes, catch-all routes, and route groups",
+  "version": "1.1.0",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -19,42 +19,58 @@
     "commands": [
       {
         "command": "nextjs-navigator.refreshRoutes",
-        "title": "Next.js Navigator: Refresh Routes",
+        "title": "Refresh Routes",
+        "shortTitle": "Refresh Routes",
+        "category": "Next.js Navigator",
         "icon": "$(refresh)"
       },
       {
         "command": "nextjs-navigator.expandAll",
-        "title": "Next.js Navigator: Expand All",
+        "title": "Expand All",
+        "shortTitle": "Expand All",
+        "category": "Next.js Navigator",
         "icon": "$(expand-all)"
       },
       {
         "command": "nextjs-navigator.collapseAll",
-        "title": "Next.js Navigator: Collapse All",
+        "title": "Collapse All",
+        "shortTitle": "Collapse All",
+        "category": "Next.js Navigator",
         "icon": "$(collapse-all)"
       },
       {
         "command": "nextjs-navigator.addRoute",
-        "title": "Next.js Navigator: Create Route",
+        "title": "Create Route",
+        "shortTitle": "Create Route",
+        "category": "Next.js Navigator",
         "icon": "$(add)"
       },
       {
         "command": "nextjs-navigator.addChildRoute",
-        "title": "Next.js Navigator: Add Child Route",
+        "title": "Add Child Route",
+        "shortTitle": "Add Child Route",
+        "category": "Next.js Navigator",
         "icon": "$(add)"
       },
       {
         "command": "nextjs-navigator.copyRoute",
-        "title": "Next.js Navigator: Copy Route Path",
+        "title": "Copy Route Path",
+        "shortTitle": "Copy Route Path",
+        "category": "Next.js Navigator",
         "icon": "$(copy)"
       },
       {
         "command": "nextjs-navigator.copyFilePath",
-        "title": "Next.js Navigator: Copy File Path",
+        "title": "Copy File Path",
+        "shortTitle": "Copy File Path",
+        "category": "Next.js Navigator",
         "icon": "$(file-symlink-file)"
       },
       {
         "command": "nextjs-navigator.deleteRoute",
-        "title": "Next.js Navigator: Delete Route",
+        "title": "Delete Route",
+        "shortTitle": "Delete Route",
+        "category": "Next.js Navigator",
         "icon": "$(trash)"
       }
     ],

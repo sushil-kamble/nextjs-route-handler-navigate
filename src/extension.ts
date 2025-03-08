@@ -44,6 +44,10 @@ async function createNewRoute(
       "Enter route path (optionally followed by :METHOD, defaults to GET)",
     value: parentPath ? `${parentPath}/` : "",
     validateInput: (value) => {
+      if (!value) {
+        return "Route path cannot be empty";
+      }
+
       if (value.includes(":")) {
         const method = value.split(":").pop()?.toUpperCase();
         if (
@@ -60,6 +64,22 @@ async function createNewRoute(
           return "Valid methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS";
         }
       }
+
+      // Check for invalid segments
+      const segments = value.split("/").filter(Boolean);
+      for (const segment of segments) {
+        if (segment.startsWith("_")) {
+          return "Segments starting with underscore (_) are private and will be excluded from routing";
+        }
+
+        // Check for malformed brackets
+        const openBrackets = segment.split("[").length - 1;
+        const closeBrackets = segment.split("]").length - 1;
+        if (openBrackets !== closeBrackets) {
+          return "Malformed dynamic segment. Make sure brackets are properly closed.";
+        }
+      }
+
       return null;
     },
   });
@@ -382,7 +402,8 @@ class RouteNode extends vscode.TreeItem {
     public readonly children: RouteNode[] = [],
     public readonly lineNumber?: number,
     public readonly routePath?: string,
-    public parent?: RouteNode
+    public parent?: RouteNode,
+    public readonly routeType?: string
   ) {
     super(label, collapsibleState);
 
@@ -402,7 +423,16 @@ class RouteNode extends vscode.TreeItem {
     switch (type) {
       case RouteNodeType.Route:
         this.contextValue = "route";
-        this.iconPath = new vscode.ThemeIcon("link");
+
+        // Set different icons based on route type
+        if (routeType === "dynamic") {
+          this.iconPath = new vscode.ThemeIcon("symbol-parameter");
+        } else if (routeType === "catchAll") {
+          this.iconPath = new vscode.ThemeIcon("references");
+        } else {
+          this.iconPath = new vscode.ThemeIcon("link");
+        }
+
         this.tooltip = `${routePath} (${filePath})`;
         break;
       case RouteNodeType.HttpMethod:
@@ -514,16 +544,48 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
         const entryPath = path.join(dirPath, entry.name);
 
         if (entry.isDirectory()) {
-          if (["node_modules", ".next", ".git"].includes(entry.name)) continue;
+          // Skip system directories and private folders (starting with _)
+          if (
+            ["node_modules", ".next", ".git"].includes(entry.name) ||
+            entry.name.startsWith("_")
+          )
+            continue;
 
           // Handle route groups (parentheses notation)
           if (entry.name.startsWith("(") && entry.name.endsWith(")")) {
+            // Route groups don't affect the URL path
             this.findRouteFiles(entryPath, routePath, parent);
           } else {
-            const newRoutePath =
-              routePath +
-              (routePath && !routePath.endsWith("/") ? "/" : "") +
-              entry.name;
+            // Handle different types of route segments
+            let segmentName = entry.name;
+            let newRoutePath = routePath;
+
+            if (newRoutePath && !newRoutePath.endsWith("/")) {
+              newRoutePath += "/";
+            }
+
+            // Determine the display name and path based on segment type
+            if (entry.name.startsWith("[...") && entry.name.endsWith("]")) {
+              // Catch-all route segment
+              const paramName = entry.name.substring(4, entry.name.length - 1);
+              segmentName = `[...${paramName}]`;
+              newRoutePath += segmentName;
+            } else if (
+              entry.name.startsWith("[[...") &&
+              entry.name.endsWith("]]")
+            ) {
+              // Optional catch-all route segment
+              const paramName = entry.name.substring(5, entry.name.length - 2);
+              segmentName = `[[...${paramName}]]`;
+              newRoutePath += segmentName;
+            } else if (entry.name.startsWith("[") && entry.name.endsWith("]")) {
+              // Dynamic route segment
+              newRoutePath += entry.name;
+            } else {
+              // Regular route segment
+              newRoutePath += entry.name;
+            }
+
             this.findRouteFiles(entryPath, newRoutePath, parent);
           }
         } else if (this.isRouteFile(entry.name)) {
@@ -538,6 +600,17 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
         const methods = this.scanRouteHandlerMethods(filePath);
 
         if (methods.length > 0) {
+          // Determine route type for proper icon display
+          const isRootRoute = displayPath === "/";
+          const isDynamicRoute = displayPath.includes("[");
+          const isCatchAllRoute = displayPath.includes("[...");
+
+          const routeType = isDynamicRoute
+            ? isCatchAllRoute
+              ? "catchAll"
+              : "dynamic"
+            : "static";
+
           const routeNode = new RouteNode(
             displayPath,
             vscode.TreeItemCollapsibleState.Collapsed,
@@ -546,7 +619,8 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
             methods,
             undefined,
             displayPath,
-            parent
+            parent,
+            routeType
           );
 
           methods.forEach((method) => {
