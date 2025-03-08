@@ -10,9 +10,7 @@
     "Other"
   ],
   "activationEvents": [
-    "workspaceContains:package.json",
-    "workspaceContains:next.config.js",
-    "workspaceContains:next.config.mjs"
+    "workspaceContains:package.json"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -102,17 +100,17 @@
       "view/title": [
         {
           "command": "nextjs-navigator.addRoute",
-          "when": "view == nextjsRoutes",
+          "when": "view == nextjsRoutes && viewItem != error",
           "group": "navigation@1"
         },
         {
           "command": "nextjs-navigator.expandAll",
-          "when": "view == nextjsRoutes",
+          "when": "view == nextjsRoutes && viewItem != error",
           "group": "navigation@2"
         },
         {
           "command": "nextjs-navigator.collapseAll",
-          "when": "view == nextjsRoutes",
+          "when": "view == nextjsRoutes && viewItem != error",
           "group": "navigation@3"
         },
         {

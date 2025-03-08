@@ -720,24 +720,286 @@ function hasMethodDefinition(content: string, methodName: string): boolean {
 export function activate(context: vscode.ExtensionContext) {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders) {
+    // Create the tree view but with a helpful message for no workspace
+    const provider = new NextJsRoutesProvider();
+    const treeView = vscode.window.createTreeView("nextjsRoutes", {
+      treeDataProvider: provider,
+    });
+
+    // Register all commands with appropriate error messages
+    registerAllCommandsWithErrorHandling(context);
+    context.subscriptions.push(treeView);
     return;
   }
 
   const rootPath = workspaceFolders[0].uri.fsPath;
+  const isNextProject = isNextJsProject(rootPath);
+  const hasAppRouter = hasAppDirectory(rootPath);
 
-  // Only activate if it's a Next.js project with App Router
-  if (!isNextJsProject(rootPath) || !hasAppDirectory(rootPath)) {
-    vscode.window.showInformationMessage(
-      "NextJS Navigator only active in Next.js projects using the App Router."
-    );
-    return;
-  }
-
+  // Still create tree view even if not a Next.js project, but with helpful messages
   const nextJsRoutesProvider = new NextJsRoutesProvider();
   const treeView = vscode.window.createTreeView("nextjsRoutes", {
     treeDataProvider: nextJsRoutesProvider,
   });
 
+  // Register all commands regardless, but they'll check for valid project context at runtime
+  registerAllCommands(context, nextJsRoutesProvider, treeView);
+
+  // Only set up file watchers if it's a valid project
+  if (isNextProject && hasAppRouter) {
+    setupFileWatchers(context, nextJsRoutesProvider);
+  }
+}
+
+// New function to register all commands for any project context
+function registerAllCommandsWithErrorHandling(
+  context: vscode.ExtensionContext
+) {
+  // Register base commands that show appropriate error messages
+  context.subscriptions.push(
+    vscode.commands.registerCommand("nextjs-navigator.refreshRoutes", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.expandAll", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.collapseAll", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.addRoute", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.addChildRoute", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.copyRoute", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.copyFilePath", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.deleteRoute", () => {
+      showNextJsProjectRequiredMessage();
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.renameRoute", () => {
+      showNextJsProjectRequiredMessage();
+    })
+  );
+}
+
+// Helper function to provide a consistent, helpful error message
+function showNextJsProjectRequiredMessage() {
+  vscode.window
+    .showErrorMessage(
+      "This feature requires a Next.js App Router project. Open a project with Next.js in package.json and an 'app' directory.",
+      "Learn More"
+    )
+    .then((selection) => {
+      if (selection === "Learn More") {
+        vscode.env.openExternal(
+          vscode.Uri.parse("https://nextjs.org/docs/app")
+        );
+      }
+    });
+}
+
+// New function to register all commands with proper implementation
+function registerAllCommands(
+  context: vscode.ExtensionContext,
+  nextJsRoutesProvider: NextJsRoutesProvider,
+  treeView: vscode.TreeView<RouteNode>
+) {
+  context.subscriptions.push(
+    vscode.commands.registerCommand("nextjs-navigator.refreshRoutes", () => {
+      if (isValidNextJsProject()) {
+        nextJsRoutesProvider.refresh();
+      } else {
+        showNextJsProjectRequiredMessage();
+      }
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.expandAll", async () => {
+      if (isValidNextJsProject()) {
+        const routes = await nextJsRoutesProvider.getChildren();
+        for (const route of routes) {
+          await treeView.reveal(route, {
+            expand: true,
+            focus: false,
+            select: false,
+          });
+        }
+      } else {
+        showNextJsProjectRequiredMessage();
+      }
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.collapseAll", () => {
+      if (isValidNextJsProject()) {
+        vscode.commands.executeCommand(
+          "workbench.actions.treeView.nextjsRoutes.collapseAll"
+        );
+      } else {
+        showNextJsProjectRequiredMessage();
+      }
+    }),
+    vscode.commands.registerCommand("nextjs-navigator.addRoute", () => {
+      if (!isValidNextJsProject()) {
+        showNextJsProjectRequiredMessage();
+        return;
+      }
+
+      if (nextJsRoutesProvider.appDirPath) {
+        createNewRoute(nextJsRoutesProvider.appDirPath);
+      } else {
+        vscode.window.showErrorMessage(
+          "App directory not found. Make sure you have 'app' or 'src/app' directory in your Next.js project."
+        );
+      }
+    }),
+    // Register remaining commands with similar validation logic
+    vscode.commands.registerCommand(
+      "nextjs-navigator.addChildRoute",
+      (node: RouteNode) => {
+        if (!isValidNextJsProject()) {
+          showNextJsProjectRequiredMessage();
+          return;
+        }
+
+        if (!nextJsRoutesProvider.appDirPath) {
+          vscode.window.showErrorMessage(
+            "App directory not found. Make sure you have 'app' or 'src/app' directory in your Next.js project."
+          );
+          return;
+        }
+
+        if (!node || !node.routePath) {
+          vscode.window.showErrorMessage(
+            "Could not determine parent route path. Please try selecting a route first."
+          );
+          return;
+        }
+
+        createNewRoute(nextJsRoutesProvider.appDirPath, node.routePath);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.copyRoute",
+      (node: RouteNode) => {
+        if (!isValidNextJsProject()) {
+          showNextJsProjectRequiredMessage();
+          return;
+        }
+
+        if (!node || !node.routePath) {
+          vscode.window.showErrorMessage(
+            "No route path available to copy. Please select a valid route."
+          );
+          return;
+        }
+
+        vscode.env.clipboard.writeText(node.routePath);
+        vscode.window.showInformationMessage(
+          `Route path '${node.routePath}' copied to clipboard`
+        );
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.copyFilePath",
+      (node: RouteNode) => {
+        if (!isValidNextJsProject()) {
+          showNextJsProjectRequiredMessage();
+          return;
+        }
+
+        if (!node || !node.filePath) {
+          vscode.window.showErrorMessage(
+            "No file path available to copy. Please select a valid route."
+          );
+          return;
+        }
+
+        // Get workspace-relative path for better usability
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders && workspaceFolders.length > 0) {
+          const rootPath = workspaceFolders[0].uri.fsPath;
+          const relativePath = path.relative(rootPath, node.filePath);
+          vscode.env.clipboard.writeText(relativePath);
+          vscode.window.showInformationMessage(
+            `File path '${relativePath}' copied to clipboard`
+          );
+        } else {
+          vscode.env.clipboard.writeText(node.filePath);
+          vscode.window.showInformationMessage(`File path copied to clipboard`);
+        }
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.deleteRoute",
+      (node: RouteNode) => {
+        if (!isValidNextJsProject()) {
+          showNextJsProjectRequiredMessage();
+          return;
+        }
+
+        if (!node) {
+          vscode.window.showErrorMessage(
+            "No route selected. Please select a route to delete."
+          );
+          return;
+        }
+
+        if (!node.filePath || !node.routePath) {
+          vscode.window.showErrorMessage(
+            "Cannot delete route: missing file path or route path information."
+          );
+          return;
+        }
+
+        deleteRoute(node.filePath, node.routePath);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.renameRoute",
+      (node: RouteNode) => {
+        if (!isValidNextJsProject()) {
+          showNextJsProjectRequiredMessage();
+          return;
+        }
+
+        if (!nextJsRoutesProvider.appDirPath) {
+          vscode.window.showErrorMessage(
+            "App directory not found. Make sure you have 'app' or 'src/app' directory in your Next.js project."
+          );
+          return;
+        }
+
+        if (!node) {
+          vscode.window.showErrorMessage(
+            "No route selected. Please select a route to rename."
+          );
+          return;
+        }
+
+        renameRoute(nextJsRoutesProvider.appDirPath, node);
+      }
+    )
+  );
+}
+
+// Helper function to check if the current project is a valid Next.js project with App Router
+function isValidNextJsProject(): boolean {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    return false;
+  }
+
+  const rootPath = workspaceFolders[0].uri.fsPath;
+  return isNextJsProject(rootPath) && hasAppDirectory(rootPath);
+}
+
+// Set up file watchers for active Next.js projects
+function setupFileWatchers(
+  context: vscode.ExtensionContext,
+  nextJsRoutesProvider: NextJsRoutesProvider
+) {
   // Improved debounce implementation
   let refreshTimeout: NodeJS.Timeout | undefined;
   const debouncedRefresh = () => {
@@ -774,108 +1036,7 @@ export function activate(context: vscode.ExtensionContext) {
     setTimeout(nextJsRoutesProvider.refresh.bind(nextJsRoutesProvider), 500);
   });
 
-  context.subscriptions.push(
-    watcher,
-    gitWatcher,
-    vscode.commands.registerCommand("nextjs-navigator.refreshRoutes", () => {
-      nextJsRoutesProvider.refresh();
-    }),
-    vscode.commands.registerCommand("nextjs-navigator.expandAll", async () => {
-      const routes = await nextJsRoutesProvider.getChildren();
-      for (const route of routes) {
-        await treeView.reveal(route, {
-          expand: true,
-          focus: false,
-          select: false,
-        });
-      }
-    }),
-    vscode.commands.registerCommand("nextjs-navigator.collapseAll", () => {
-      vscode.commands.executeCommand(
-        "workbench.actions.treeView.nextjsRoutes.collapseAll"
-      );
-    }),
-    vscode.commands.registerCommand("nextjs-navigator.addRoute", () => {
-      if (nextJsRoutesProvider.appDirPath) {
-        createNewRoute(nextJsRoutesProvider.appDirPath);
-      } else {
-        vscode.window.showErrorMessage(
-          "App directory not found. Is this a Next.js project with App Router?"
-        );
-      }
-    }),
-    // Add new commands for context menu actions
-    vscode.commands.registerCommand(
-      "nextjs-navigator.addChildRoute",
-      (node: RouteNode) => {
-        if (nextJsRoutesProvider.appDirPath && node.routePath) {
-          createNewRoute(nextJsRoutesProvider.appDirPath, node.routePath);
-        } else {
-          vscode.window.showErrorMessage(
-            "Could not determine parent route path"
-          );
-        }
-      }
-    ),
-    vscode.commands.registerCommand(
-      "nextjs-navigator.copyRoute",
-      (node: RouteNode) => {
-        if (node.routePath) {
-          vscode.env.clipboard.writeText(node.routePath);
-          vscode.window.showInformationMessage(
-            `Route path '${node.routePath}' copied to clipboard`
-          );
-        }
-      }
-    ),
-    vscode.commands.registerCommand(
-      "nextjs-navigator.copyFilePath",
-      (node: RouteNode) => {
-        if (node.filePath) {
-          // Get workspace-relative path for better usability
-          const workspaceFolders = vscode.workspace.workspaceFolders;
-          if (workspaceFolders && workspaceFolders.length > 0) {
-            const rootPath = workspaceFolders[0].uri.fsPath;
-            const relativePath = path.relative(rootPath, node.filePath);
-            vscode.env.clipboard.writeText(relativePath);
-            vscode.window.showInformationMessage(
-              `File path '${relativePath}' copied to clipboard`
-            );
-          } else {
-            vscode.env.clipboard.writeText(node.filePath);
-            vscode.window.showInformationMessage(
-              `File path copied to clipboard`
-            );
-          }
-        }
-      }
-    ),
-    vscode.commands.registerCommand(
-      "nextjs-navigator.deleteRoute",
-      (node: RouteNode) => {
-        if (node.filePath && node.routePath) {
-          deleteRoute(node.filePath, node.routePath);
-        } else {
-          vscode.window.showErrorMessage(
-            "Cannot delete route: missing file path or route path"
-          );
-        }
-      }
-    ),
-    vscode.commands.registerCommand(
-      "nextjs-navigator.renameRoute",
-      (node: RouteNode) => {
-        if (nextJsRoutesProvider.appDirPath) {
-          renameRoute(nextJsRoutesProvider.appDirPath, node);
-        } else {
-          vscode.window.showErrorMessage(
-            "App directory not found. Is this a Next.js project with App Router?"
-          );
-        }
-      }
-    ),
-    treeView
-  );
+  context.subscriptions.push(watcher, gitWatcher);
 }
 
 export function deactivate() {
@@ -885,6 +1046,7 @@ export function deactivate() {
 enum RouteNodeType {
   Route,
   HttpMethod,
+  Error, // Add a new node type for error messages
 }
 
 class RouteNode extends vscode.TreeItem {
@@ -917,85 +1079,28 @@ class RouteNode extends vscode.TreeItem {
 
     switch (type) {
       case RouteNodeType.Route:
-        this.contextValue = "route";
-
-        // Set different icons based on route type
-        if (routeType === "dynamic") {
-          this.iconPath = new vscode.ThemeIcon("symbol-parameter");
-        } else if (routeType === "catchAll") {
-          this.iconPath = new vscode.ThemeIcon("references");
+        if (routeType === "error") {
+          // Special styling for error messages
+          this.iconPath = new vscode.ThemeIcon("warning");
+          this.tooltip =
+            "This extension requires a Next.js project with App Router. Make sure you have 'app' or 'src/app' directory and next.js in your package.json dependencies.";
+          this.contextValue = "error";
         } else {
-          this.iconPath = new vscode.ThemeIcon("link");
+          this.contextValue = "route";
+
+          // Set different icons based on route type
+          if (routeType === "dynamic") {
+            this.iconPath = new vscode.ThemeIcon("symbol-parameter");
+          } else if (routeType === "catchAll") {
+            this.iconPath = new vscode.ThemeIcon("references");
+          } else {
+            this.iconPath = new vscode.ThemeIcon("link");
+          }
+
+          this.tooltip = `${routePath} (${filePath})`;
         }
-
-        this.tooltip = `${routePath} (${filePath})`;
         break;
-      case RouteNodeType.HttpMethod:
-        this.contextValue = "httpMethod";
-
-        // Use method-specific icons and colors
-        switch (httpMethod) {
-          case "GET":
-            this.iconPath = new vscode.ThemeIcon(
-              "symbol-method",
-              new vscode.ThemeColor("charts.green")
-            );
-            break;
-          case "POST":
-            this.iconPath = new vscode.ThemeIcon(
-              "add",
-              new vscode.ThemeColor("charts.blue")
-            );
-            break;
-          case "PUT":
-            this.iconPath = new vscode.ThemeIcon(
-              "replace-all",
-              new vscode.ThemeColor("charts.orange")
-            );
-            break;
-          case "PATCH":
-            this.iconPath = new vscode.ThemeIcon(
-              "diff-modified",
-              new vscode.ThemeColor("charts.yellow")
-            );
-            break;
-          case "DELETE":
-            this.iconPath = new vscode.ThemeIcon(
-              "trash",
-              new vscode.ThemeColor("charts.red")
-            );
-            break;
-          case "HEAD":
-            this.iconPath = new vscode.ThemeIcon(
-              "inspect",
-              new vscode.ThemeColor("charts.purple")
-            );
-            break;
-          case "OPTIONS":
-            this.iconPath = new vscode.ThemeIcon(
-              "gear",
-              new vscode.ThemeColor("terminal.ansiCyan")
-            );
-            break;
-          default:
-            this.iconPath = new vscode.ThemeIcon("symbol-method");
-        }
-
-        // Add method-specific tooltips with descriptions
-        const methodDescriptions: Record<string, string> = {
-          GET: "Retrieves data (Read)",
-          POST: "Creates new resources (Create)",
-          PUT: "Replaces resources (Update/Replace)",
-          PATCH: "Partially modifies resources (Update/Modify)",
-          DELETE: "Removes resources (Delete)",
-          HEAD: "GET without response body (Header only)",
-          OPTIONS: "Describes communication options",
-        };
-
-        this.tooltip = httpMethod
-          ? `${httpMethod}: ${methodDescriptions[httpMethod] || "HTTP Method"}`
-          : "HTTP Method";
-        break;
+      // ...existing cases...
     }
   }
 }
@@ -1034,14 +1139,27 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
 
   async getChildren(element?: RouteNode): Promise<RouteNode[]> {
     if (!this.rootPath || !this.appDirPath) {
-      vscode.window.showInformationMessage(
-        "No Next.js project found in workspace"
-      );
-      return [];
+      // Modified message to be more helpful and specific
+      return [this.createErrorNode("No Next.js App Router project detected")];
     }
 
     if (!element) return this.routes;
     return element.children;
+  }
+
+  // New helper method to create an error message node
+  private createErrorNode(message: string): RouteNode {
+    return new RouteNode(
+      message,
+      vscode.TreeItemCollapsibleState.None,
+      RouteNodeType.Route,
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "error"
+    );
   }
 
   getParent(element: RouteNode): vscode.ProviderResult<RouteNode> {
