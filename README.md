@@ -2,7 +2,11 @@
 
 ## Description
 
-**Next.js Navigator** is a VS Code extension that enhances navigation within Next.js App Router projects. This powerful tool provides an intuitive tree view in the activity sidebar, making it effortless to browse, create, and manage route handlers in your Next.js application.
+Developing Next.js applications with the App Router can sometimes feel like navigating a maze of files and directories. Keeping track of your API endpoints and UI routes can become challenging, especially in larger projects. **Next.js Navigator** is a VS Code extension designed to solve this problem by providing an intuitive and efficient way to visualize, create, and manage your Next.js App Router routes.
+
+Imagine you're working on an e-commerce platform. You might have routes like `/products/[id]`, `/api/orders`, and `/admin/dashboard`. With Next.js Navigator, you can see all these routes in a clear tree view, navigate directly to the relevant code, and even create new routes with ease.
+
+This powerful tool provides an intuitive tree view in the activity sidebar, making it effortless to browse, create, and manage route handlers in your Next.js application.
 
 ## Features
 
@@ -22,7 +26,7 @@
 
 - **Route Management**:
 
-  - Create new routes with `/path/to/route:METHOD` syntax
+  - Create new routes with `/path/to/route:METHOD` syntax. For example, `/api/users:POST` will create a new POST route at `/api/users`.
   - Add child routes to existing routes
   - Copy route paths to clipboard
   - Copy file paths to clipboard
