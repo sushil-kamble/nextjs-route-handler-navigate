@@ -10,10 +10,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:typescript",
-    "onLanguage:javascript",
-    "onLanguage:typescriptreact",
-    "onLanguage:javascriptreact"
+    "workspaceContains:package.json",
+    "workspaceContains:next.config.js",
+    "workspaceContains:next.config.mjs"
   ],
   "main": "./dist/extension.js",
   "contributes": {

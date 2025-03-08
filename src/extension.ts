@@ -2,7 +2,52 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 
+// Add this new function to check for Next.js project
+function isNextJsProject(workspacePath: string): boolean {
+  try {
+    // Check for package.json
+    const packageJsonPath = path.join(workspacePath, "package.json");
+    if (!fs.existsSync(packageJsonPath)) {
+      return false;
+    }
+
+    // Read and parse package.json
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+
+    // Check if next.js is a dependency
+    return !!(
+      (packageJson.dependencies && packageJson.dependencies.next) ||
+      (packageJson.devDependencies && packageJson.devDependencies.next)
+    );
+  } catch (error) {
+    return false;
+  }
+}
+
+// Add this function to check for App Router
+function hasAppDirectory(workspacePath: string): boolean {
+  return (
+    fs.existsSync(path.join(workspacePath, "app")) ||
+    fs.existsSync(path.join(workspacePath, "src", "app"))
+  );
+}
+
 export function activate(context: vscode.ExtensionContext) {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders) {
+    return;
+  }
+
+  const rootPath = workspaceFolders[0].uri.fsPath;
+
+  // Only activate if it's a Next.js project with App Router
+  if (!isNextJsProject(rootPath) || !hasAppDirectory(rootPath)) {
+    vscode.window.showInformationMessage(
+      "NextJS Navigator only active in Next.js projects using the App Router."
+    );
+    return;
+  }
+
   const nextJsRoutesProvider = new NextJsRoutesProvider();
   const treeView = vscode.window.createTreeView("nextjsRoutes", {
     treeDataProvider: nextJsRoutesProvider,
