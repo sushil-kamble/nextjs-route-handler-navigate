@@ -2,6 +2,17 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 
+// Define HTTP methods constant for reuse
+const HTTP_METHODS = [
+  "GET",
+  "POST",
+  "PUT",
+  "DELETE",
+  "PATCH",
+  "HEAD",
+  "OPTIONS",
+];
+
 // Add this new function to check for Next.js project
 function isNextJsProject(workspacePath: string): boolean {
   try {
@@ -50,18 +61,8 @@ async function createNewRoute(
 
       if (value.includes(":")) {
         const method = value.split(":").pop()?.toUpperCase();
-        if (
-          ![
-            "GET",
-            "POST",
-            "PUT",
-            "DELETE",
-            "PATCH",
-            "HEAD",
-            "OPTIONS",
-          ].includes(method!)
-        ) {
-          return "Valid methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS";
+        if (!HTTP_METHODS.includes(method!)) {
+          return `Valid methods: ${HTTP_METHODS.join(", ")}`;
         }
       }
 
@@ -156,7 +157,7 @@ async function createNewRoute(
   }
 }
 
-// Add new function to delete a route
+// Update the deleteRoute function to properly handle folder deletions
 async function deleteRoute(filePath: string, routePath: string): Promise<void> {
   if (!filePath || !fs.existsSync(filePath)) {
     vscode.window.showErrorMessage("Route file not found.");
@@ -174,16 +175,31 @@ async function deleteRoute(filePath: string, routePath: string): Promise<void> {
   }
 
   try {
+    // Get directory path before deleting the file
+    const dir = path.dirname(filePath);
+
     // Delete the file
     fs.unlinkSync(filePath);
 
-    // Check if the directory is empty (except for the route file we just deleted)
-    const dir = path.dirname(filePath);
-    const items = fs.readdirSync(dir);
+    // Find the app directory path to use as the boundary for recursion
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    let appDirPath: string | undefined;
 
-    if (items.length === 0) {
-      // Directory is empty, delete it
-      fs.rmdirSync(dir);
+    if (workspaceFolders && workspaceFolders.length > 0) {
+      const rootPath = workspaceFolders[0].uri.fsPath;
+      const appDir = path.join(rootPath, "app");
+      const srcAppDir = path.join(rootPath, "src", "app");
+
+      if (fs.existsSync(appDir) && dir.startsWith(appDir)) {
+        appDirPath = appDir;
+      } else if (fs.existsSync(srcAppDir) && dir.startsWith(srcAppDir)) {
+        appDirPath = srcAppDir;
+      }
+    }
+
+    // Clean up empty directories recursively, stopping at app directory
+    if (appDirPath) {
+      cleanupEmptyDirectories(dir, appDirPath);
     }
 
     // Refresh the routes tree view
@@ -198,6 +214,40 @@ async function deleteRoute(filePath: string, routePath: string): Promise<void> {
         error instanceof Error ? error.message : String(error)
       }`
     );
+  }
+}
+
+// Improved function to recursively clean up empty directories
+function cleanupEmptyDirectories(dirPath: string, appDirPath: string): void {
+  // Don't delete the app directory itself or any directory outside of it
+  if (!dirPath || dirPath === appDirPath || !dirPath.startsWith(appDirPath)) {
+    return;
+  }
+
+  try {
+    // Check if directory exists (it might have been deleted in a previous recursive call)
+    if (!fs.existsSync(dirPath)) {
+      return;
+    }
+
+    // Read directory contents
+    const items = fs.readdirSync(dirPath);
+
+    // If directory is not empty, stop recursion
+    if (items.length > 0) {
+      return;
+    }
+
+    console.log(`Deleting empty directory: ${dirPath}`);
+    // Directory is empty, delete it
+    fs.rmdirSync(dirPath);
+
+    // Recursively check parent directory
+    const parentDir = path.dirname(dirPath);
+    cleanupEmptyDirectories(parentDir, appDirPath);
+  } catch (error) {
+    console.error(`Error cleaning up directory ${dirPath}:`, error);
+    // Continue with execution, don't throw - this is a cleanup operation
   }
 }
 
@@ -403,7 +453,8 @@ class RouteNode extends vscode.TreeItem {
     public readonly lineNumber?: number,
     public readonly routePath?: string,
     public parent?: RouteNode,
-    public readonly routeType?: string
+    public readonly routeType?: string,
+    public readonly httpMethod?: string
   ) {
     super(label, collapsibleState);
 
@@ -437,7 +488,69 @@ class RouteNode extends vscode.TreeItem {
         break;
       case RouteNodeType.HttpMethod:
         this.contextValue = "httpMethod";
-        this.iconPath = new vscode.ThemeIcon("symbol-method");
+
+        // Use method-specific icons and colors
+        switch (httpMethod) {
+          case "GET":
+            this.iconPath = new vscode.ThemeIcon(
+              "symbol-method",
+              new vscode.ThemeColor("charts.green")
+            );
+            break;
+          case "POST":
+            this.iconPath = new vscode.ThemeIcon(
+              "add",
+              new vscode.ThemeColor("charts.blue")
+            );
+            break;
+          case "PUT":
+            this.iconPath = new vscode.ThemeIcon(
+              "replace-all",
+              new vscode.ThemeColor("charts.orange")
+            );
+            break;
+          case "PATCH":
+            this.iconPath = new vscode.ThemeIcon(
+              "diff-modified",
+              new vscode.ThemeColor("charts.yellow")
+            );
+            break;
+          case "DELETE":
+            this.iconPath = new vscode.ThemeIcon(
+              "trash",
+              new vscode.ThemeColor("charts.red")
+            );
+            break;
+          case "HEAD":
+            this.iconPath = new vscode.ThemeIcon(
+              "inspect",
+              new vscode.ThemeColor("charts.purple")
+            );
+            break;
+          case "OPTIONS":
+            this.iconPath = new vscode.ThemeIcon(
+              "gear",
+              new vscode.ThemeColor("terminal.ansiCyan")
+            );
+            break;
+          default:
+            this.iconPath = new vscode.ThemeIcon("symbol-method");
+        }
+
+        // Add method-specific tooltips with descriptions
+        const methodDescriptions: Record<string, string> = {
+          GET: "Retrieves data (Read)",
+          POST: "Creates new resources (Create)",
+          PUT: "Replaces resources (Update/Replace)",
+          PATCH: "Partially modifies resources (Update/Modify)",
+          DELETE: "Removes resources (Delete)",
+          HEAD: "GET without response body (Header only)",
+          OPTIONS: "Describes communication options",
+        };
+
+        this.tooltip = httpMethod
+          ? `${httpMethod}: ${methodDescriptions[httpMethod] || "HTTP Method"}`
+          : "HTTP Method";
         break;
     }
   }
@@ -451,17 +564,6 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
   public appDirPath?: string;
   private visitedDirs = new Set<string>();
   private routes: RouteNode[] = [];
-
-  // HTTP methods to detect
-  private static readonly HTTP_METHODS = [
-    "GET",
-    "POST",
-    "PUT",
-    "DELETE",
-    "PATCH",
-    "HEAD",
-    "OPTIONS",
-  ];
 
   constructor() {
     this.findAppDirectory();
@@ -650,7 +752,7 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
         const line = lines[i];
 
         // Check for HTTP method exports
-        for (const method of NextJsRoutesProvider.HTTP_METHODS) {
+        for (const method of HTTP_METHODS) {
           // Updated regex to match both arrow functions and function declarations
           // Handles both export const GET = ... and export async function GET() formats
           if (
@@ -667,7 +769,10 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
                 filePath,
                 [],
                 i,
-                undefined
+                undefined,
+                undefined,
+                undefined,
+                method
               )
             );
             break; // Found method on this line, no need to check others

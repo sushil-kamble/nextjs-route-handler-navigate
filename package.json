@@ -94,24 +94,24 @@
     "menus": {
       "view/title": [
         {
-          "command": "nextjs-navigator.refreshRoutes",
+          "command": "nextjs-navigator.addRoute",
           "when": "view == nextjsRoutes",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "nextjs-navigator.expandAll",
           "when": "view == nextjsRoutes",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "nextjs-navigator.collapseAll",
           "when": "view == nextjsRoutes",
-          "group": "navigation"
+          "group": "navigation@3"
         },
         {
-          "command": "nextjs-navigator.addRoute",
+          "command": "nextjs-navigator.refreshRoutes",
           "when": "view == nextjsRoutes",
-          "group": "navigation"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
