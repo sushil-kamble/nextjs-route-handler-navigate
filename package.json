@@ -72,6 +72,13 @@
         "shortTitle": "Delete Route",
         "category": "Next.js Navigator",
         "icon": "$(trash)"
+      },
+      {
+        "command": "nextjs-navigator.renameRoute",
+        "title": "Rename Route",
+        "shortTitle": "Rename Route",
+        "category": "Next.js Navigator",
+        "icon": "$(edit)"
       }
     ],
     "viewsContainers": {
@@ -134,6 +141,11 @@
           "command": "nextjs-navigator.deleteRoute",
           "when": "view == nextjsRoutes && viewItem == route",
           "group": "3_deletion"
+        },
+        {
+          "command": "nextjs-navigator.renameRoute",
+          "when": "view == nextjsRoutes && viewItem == route",
+          "group": "1_modification"
         }
       ],
       "commandPalette": [
@@ -163,6 +175,10 @@
         },
         {
           "command": "nextjs-navigator.deleteRoute",
+          "when": "false"
+        },
+        {
+          "command": "nextjs-navigator.renameRoute",
           "when": "false"
         }
       ]

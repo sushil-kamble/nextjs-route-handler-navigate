@@ -300,6 +300,319 @@ function generateRouteFile(method: string, fileExt: string): string {
   return `${imports}${generateRouteHandler(method, fileExt)}`;
 }
 
+// Add the route renaming functionality
+async function renameRoute(appDirPath: string, node: RouteNode): Promise<void> {
+  if (!node.filePath || !node.routePath) {
+    vscode.window.showErrorMessage(
+      "Cannot rename route: missing file information"
+    );
+    return;
+  }
+
+  // Ask for the new route path input with current path as default value
+  const currentPath = node.routePath;
+  const input = await vscode.window.showInputBox({
+    placeHolder: "Enter new route path (e.g., /api/v2/users)",
+    prompt: "Enter new path for this route",
+    value: currentPath,
+    validateInput: (value) => {
+      if (!value) {
+        return "Route path cannot be empty";
+      }
+
+      // Check for invalid segments
+      const segments = value.split("/").filter(Boolean);
+      for (const segment of segments) {
+        if (segment.startsWith("_")) {
+          return "Segments starting with underscore (_) are private and will be excluded from routing";
+        }
+
+        // Check for malformed brackets
+        const openBrackets = segment.split("[").length - 1;
+        const closeBrackets = segment.split("]").length - 1;
+        if (openBrackets !== closeBrackets) {
+          return "Malformed dynamic segment. Make sure brackets are properly closed.";
+        }
+      }
+
+      return null;
+    },
+  });
+
+  if (!input || input === currentPath) return; // User canceled or no change
+
+  try {
+    // Clean up both routes to ensure consistent format
+    const cleanCurrentPath = currentPath.startsWith("/")
+      ? currentPath.substring(1)
+      : currentPath;
+
+    const cleanNewPath = input.startsWith("/") ? input.substring(1) : input;
+
+    // Get the route file information
+    const sourceFilePath = node.filePath;
+    const sourceDir = path.dirname(sourceFilePath);
+    const fileName = path.basename(sourceFilePath);
+
+    // Construct the target directory path
+    const relativePath = getRelativePathFromAppDir(appDirPath, sourceDir);
+    const relativeSegments = relativePath.split(path.sep).filter(Boolean);
+    const pathDepth = getRoutePathDepth(cleanCurrentPath);
+
+    // Adjust directory structure based on path depth to handle route groups
+    let targetDirRelative: string;
+    if (relativeSegments.length === pathDepth) {
+      // Direct mapping between file structure and route path
+      targetDirRelative = cleanNewPath.split("/").join(path.sep);
+    } else {
+      // Handle route groups by preserving the structure
+      const pathSegments = cleanCurrentPath.split("/");
+      const newPathSegments = cleanNewPath.split("/");
+
+      // Find the deepest common directory that's not in a route group
+      let routeSegmentIndex = 0;
+      const adjustedSegments = [...relativeSegments];
+
+      for (let i = 0; i < relativeSegments.length; i++) {
+        const segment = relativeSegments[i];
+        // Skip route groups (they don't affect the URL)
+        if (segment.startsWith("(") && segment.endsWith(")")) {
+          continue;
+        }
+
+        if (routeSegmentIndex < pathSegments.length) {
+          // Replace path segment with new one at the same position
+          if (routeSegmentIndex < newPathSegments.length) {
+            adjustedSegments[i] = newPathSegments[routeSegmentIndex];
+          }
+          routeSegmentIndex++;
+        }
+      }
+
+      // If the new path has more segments, append them
+      while (routeSegmentIndex < newPathSegments.length) {
+        adjustedSegments.push(newPathSegments[routeSegmentIndex]);
+        routeSegmentIndex++;
+      }
+
+      targetDirRelative = adjustedSegments.join(path.sep);
+    }
+
+    const targetDir = path.join(appDirPath, targetDirRelative);
+    const targetFilePath = path.join(targetDir, fileName);
+
+    // Check if target directory already exists
+    if (fs.existsSync(targetDir)) {
+      // Check if target file already exists
+      if (fs.existsSync(targetFilePath)) {
+        const confirmation = await vscode.window.showWarningMessage(
+          `A route file already exists at the target location. Do you want to merge the HTTP methods?`,
+          { modal: true },
+          "Merge",
+          "Cancel"
+        );
+
+        if (confirmation !== "Merge") {
+          return;
+        }
+
+        // Merge the HTTP methods from source file to target file
+        await mergeRouteFiles(sourceFilePath, targetFilePath);
+
+        // Remove source file after merging
+        fs.unlinkSync(sourceFilePath);
+      } else {
+        // Target dir exists but file doesn't, simply move the file
+        ensureDirectoryExists(targetDir);
+        fs.copyFileSync(sourceFilePath, targetFilePath);
+        fs.unlinkSync(sourceFilePath);
+      }
+    } else {
+      // Create target directory and move file
+      ensureDirectoryExists(targetDir);
+      fs.copyFileSync(sourceFilePath, targetFilePath);
+      fs.unlinkSync(sourceFilePath);
+    }
+
+    // Clean up empty directories recursively
+    cleanupEmptyDirectories(sourceDir, appDirPath);
+
+    // Refresh the routes tree view
+    vscode.commands.executeCommand("nextjs-navigator.refreshRoutes");
+
+    // Open the file in editor
+    const document = await vscode.workspace.openTextDocument(targetFilePath);
+    await vscode.window.showTextDocument(document);
+
+    vscode.window.showInformationMessage(
+      `Route renamed from '${currentPath}' to '${input}' successfully`
+    );
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to rename route: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+// Helper function to merge HTTP methods from source to target route files
+async function mergeRouteFiles(
+  sourceFilePath: string,
+  targetFilePath: string
+): Promise<void> {
+  const sourceContent = fs.readFileSync(sourceFilePath, "utf8");
+  const targetContent = fs.readFileSync(targetFilePath, "utf8");
+
+  const sourceLines = sourceContent.split("\n");
+  const targetLines = targetContent.split("\n");
+
+  // Find imports in source file that need to be added to target
+  const sourceImports: string[] = [];
+  const methodsToAdd: string[] = [];
+
+  let currentMethod = "";
+  let methodContent = "";
+  let collectingMethod = false;
+  let braceCount = 0;
+
+  // Extract imports from source file
+  for (const line of sourceLines) {
+    if (line.trim().startsWith("import ") && line.includes("from ")) {
+      sourceImports.push(line);
+    }
+  }
+
+  // Extract methods from source file
+  for (let i = 0; i < sourceLines.length; i++) {
+    const line = sourceLines[i];
+
+    // Check for method declaration
+    for (const method of HTTP_METHODS) {
+      const arrowFunctionPattern = new RegExp(
+        `export\\s+(const|async\\s+const)\\s+${method}\\s*=`,
+        "i"
+      );
+      const functionDeclPattern = new RegExp(
+        `export\\s+(async\\s+)?function\\s+${method}\\s*\\(`,
+        "i"
+      );
+
+      if (arrowFunctionPattern.test(line) || functionDeclPattern.test(line)) {
+        collectingMethod = true;
+        currentMethod = method;
+        methodContent = line;
+
+        // Count opening braces
+        braceCount += (line.match(/{/g) || []).length;
+        braceCount -= (line.match(/}/g) || []).length;
+
+        // If method definition is a one-liner
+        if (braceCount === 0 && line.includes("=>") && line.includes(";")) {
+          methodsToAdd.push(methodContent);
+          collectingMethod = false;
+        }
+        break;
+      }
+    }
+
+    // Continue collecting multi-line method
+    if (collectingMethod && i > 0) {
+      methodContent += "\n" + line;
+
+      // Update brace count
+      braceCount += (line.match(/{/g) || []).length;
+      braceCount -= (line.match(/}/g) || []).length;
+
+      // End of method reached
+      if (braceCount === 0) {
+        methodsToAdd.push(methodContent);
+        collectingMethod = false;
+      }
+    }
+  }
+
+  // Check if methods already exist in target file
+  let updatedTargetContent = targetContent;
+
+  // Add any imports from source that aren't in target
+  for (const importStatement of sourceImports) {
+    if (!updatedTargetContent.includes(importStatement)) {
+      // Add import to the top, after other existing imports
+      const lastImportIndex = getLastImportIndex(targetLines);
+      if (lastImportIndex >= 0) {
+        targetLines.splice(lastImportIndex + 1, 0, importStatement);
+      } else {
+        targetLines.unshift(importStatement);
+      }
+      updatedTargetContent = targetLines.join("\n");
+    }
+  }
+
+  // Add methods if they don't already exist
+  for (const methodCode of methodsToAdd) {
+    const methodName = getMethodNameFromCode(methodCode);
+    if (methodName && !hasMethodDefinition(updatedTargetContent, methodName)) {
+      updatedTargetContent += "\n\n" + methodCode;
+    }
+  }
+
+  fs.writeFileSync(targetFilePath, updatedTargetContent);
+}
+
+// Helper function to ensure a directory exists
+function ensureDirectoryExists(dirPath: string): void {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+// Helper function to get the relative path from app dir to the route directory
+function getRelativePathFromAppDir(
+  appDirPath: string,
+  routeDirPath: string
+): string {
+  return path.relative(appDirPath, path.dirname(routeDirPath));
+}
+
+// Helper function to calculate the depth of a route path
+function getRoutePathDepth(routePath: string): number {
+  return routePath === "/" ? 0 : routePath.split("/").filter(Boolean).length;
+}
+
+// Helper function to get the last import statement index
+function getLastImportIndex(lines: string[]): number {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim().startsWith("import ")) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Helper to extract method name from code
+function getMethodNameFromCode(code: string): string | null {
+  for (const method of HTTP_METHODS) {
+    if (
+      new RegExp(
+        `export\\s+(async\\s+)?(const\\s+${method}\\s*=|function\\s+${method}\\s*\\()`,
+        "i"
+      ).test(code)
+    ) {
+      return method;
+    }
+  }
+  return null;
+}
+
+// Helper to check if a method already exists in content
+function hasMethodDefinition(content: string, methodName: string): boolean {
+  return new RegExp(
+    `export\\s+(async\\s+)?(const\\s+${methodName}\\s*=|function\\s+${methodName}\\s*\\()`,
+    "i"
+  ).test(content);
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders) {
@@ -426,6 +739,18 @@ export function activate(context: vscode.ExtensionContext) {
         } else {
           vscode.window.showErrorMessage(
             "Cannot delete route: missing file path or route path"
+          );
+        }
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.renameRoute",
+      (node: RouteNode) => {
+        if (nextJsRoutesProvider.appDirPath) {
+          renameRoute(nextJsRoutesProvider.appDirPath, node);
+        } else {
+          vscode.window.showErrorMessage(
+            "App directory not found. Is this a Next.js project with App Router?"
           );
         }
       }
