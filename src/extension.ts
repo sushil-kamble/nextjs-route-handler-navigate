@@ -33,12 +33,16 @@ function hasAppDirectory(workspacePath: string): boolean {
 }
 
 // Add route creation functionality
-async function createNewRoute(appDirPath: string): Promise<void> {
-  // Ask for the route path input
+async function createNewRoute(
+  appDirPath: string,
+  parentPath?: string
+): Promise<void> {
+  // Ask for the route path input with optional pre-filled value
   const input = await vscode.window.showInputBox({
     placeHolder: "e.g., /api/hello or /products/[id]:POST",
     prompt:
       "Enter route path (optionally followed by :METHOD, defaults to GET)",
+    value: parentPath ? `${parentPath}/` : "",
     validateInput: (value) => {
       if (value.includes(":")) {
         const method = value.split(":").pop()?.toUpperCase();
@@ -126,6 +130,51 @@ async function createNewRoute(appDirPath: string): Promise<void> {
   } catch (error) {
     vscode.window.showErrorMessage(
       `Failed to create route: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+// Add new function to delete a route
+async function deleteRoute(filePath: string, routePath: string): Promise<void> {
+  if (!filePath || !fs.existsSync(filePath)) {
+    vscode.window.showErrorMessage("Route file not found.");
+    return;
+  }
+
+  const confirmation = await vscode.window.showWarningMessage(
+    `Are you sure you want to delete route '${routePath}'?`,
+    { modal: true },
+    "Delete"
+  );
+
+  if (confirmation !== "Delete") {
+    return;
+  }
+
+  try {
+    // Delete the file
+    fs.unlinkSync(filePath);
+
+    // Check if the directory is empty (except for the route file we just deleted)
+    const dir = path.dirname(filePath);
+    const items = fs.readdirSync(dir);
+
+    if (items.length === 0) {
+      // Directory is empty, delete it
+      fs.rmdirSync(dir);
+    }
+
+    // Refresh the routes tree view
+    vscode.commands.executeCommand("nextjs-navigator.refreshRoutes");
+
+    vscode.window.showInformationMessage(
+      `Route ${routePath} deleted successfully`
+    );
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to delete route: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
@@ -253,6 +302,64 @@ export function activate(context: vscode.ExtensionContext) {
         );
       }
     }),
+    // Add new commands for context menu actions
+    vscode.commands.registerCommand(
+      "nextjs-navigator.addChildRoute",
+      (node: RouteNode) => {
+        if (nextJsRoutesProvider.appDirPath && node.routePath) {
+          createNewRoute(nextJsRoutesProvider.appDirPath, node.routePath);
+        } else {
+          vscode.window.showErrorMessage(
+            "Could not determine parent route path"
+          );
+        }
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.copyRoute",
+      (node: RouteNode) => {
+        if (node.routePath) {
+          vscode.env.clipboard.writeText(node.routePath);
+          vscode.window.showInformationMessage(
+            `Route path '${node.routePath}' copied to clipboard`
+          );
+        }
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.copyFilePath",
+      (node: RouteNode) => {
+        if (node.filePath) {
+          // Get workspace-relative path for better usability
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          if (workspaceFolders && workspaceFolders.length > 0) {
+            const rootPath = workspaceFolders[0].uri.fsPath;
+            const relativePath = path.relative(rootPath, node.filePath);
+            vscode.env.clipboard.writeText(relativePath);
+            vscode.window.showInformationMessage(
+              `File path '${relativePath}' copied to clipboard`
+            );
+          } else {
+            vscode.env.clipboard.writeText(node.filePath);
+            vscode.window.showInformationMessage(
+              `File path copied to clipboard`
+            );
+          }
+        }
+      }
+    ),
+    vscode.commands.registerCommand(
+      "nextjs-navigator.deleteRoute",
+      (node: RouteNode) => {
+        if (node.filePath && node.routePath) {
+          deleteRoute(node.filePath, node.routePath);
+        } else {
+          vscode.window.showErrorMessage(
+            "Cannot delete route: missing file path or route path"
+          );
+        }
+      }
+    ),
     treeView
   );
 }
