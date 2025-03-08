@@ -1,4 +1,3 @@
-// src/extension.ts
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
@@ -9,7 +8,30 @@ export function activate(context: vscode.ExtensionContext) {
     treeDataProvider: nextJsRoutesProvider,
   });
 
+  // Improved debounce implementation
+  let refreshTimeout: NodeJS.Timeout | undefined;
+  const debouncedRefresh = () => {
+    clearTimeout(refreshTimeout);
+    refreshTimeout = setTimeout(
+      nextJsRoutesProvider.refresh.bind(nextJsRoutesProvider),
+      300
+    );
+  };
+
+  // Consolidated file watcher with optimized patterns
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    "**/{app,src/app}/**",
+    false,
+    false,
+    false
+  );
+
+  watcher.onDidCreate(debouncedRefresh);
+  watcher.onDidChange(debouncedRefresh);
+  watcher.onDidDelete(debouncedRefresh);
+
   context.subscriptions.push(
+    watcher,
     vscode.commands.registerCommand("nextjs-navigator.refreshRoutes", () => {
       nextJsRoutesProvider.refresh();
     }),
@@ -24,17 +46,17 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
     vscode.commands.registerCommand("nextjs-navigator.collapseAll", () => {
-      // Use the built-in VS Code command for collapsing tree views
       vscode.commands.executeCommand(
         "workbench.actions.treeView.nextjsRoutes.collapseAll"
       );
     }),
-    // Register the tree view itself in subscriptions for proper disposal
     treeView
   );
 }
 
-export function deactivate() {}
+export function deactivate() {
+  // Explicit cleanup not needed as vscode handles disposal of registered objects
+}
 
 enum RouteNodeType {
   Route,
@@ -50,7 +72,7 @@ class RouteNode extends vscode.TreeItem {
     public readonly children: RouteNode[] = [],
     public readonly lineNumber?: number,
     public readonly routePath?: string,
-    public readonly parent?: RouteNode
+    public parent?: RouteNode
   ) {
     super(label, collapsibleState);
 
@@ -91,6 +113,17 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
   private visitedDirs = new Set<string>();
   private routes: RouteNode[] = [];
 
+  // HTTP methods to detect
+  private static readonly HTTP_METHODS = [
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "PATCH",
+    "HEAD",
+    "OPTIONS",
+  ];
+
   constructor() {
     this.findAppDirectory();
     this.scanAllRoutes();
@@ -102,12 +135,6 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
     this.findAppDirectory();
     this.scanAllRoutes();
     this._onDidChangeTreeData.fire();
-  }
-
-  // This method is not needed anymore since we're using the built-in collapseAll
-  // Keep it for backward compatibility but it should just call the regular refresh
-  refreshWithCollapsedState(): void {
-    this.refresh();
   }
 
   getTreeItem(element: RouteNode): vscode.TreeItem {
@@ -135,73 +162,78 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
     if (!workspaceFolders) return;
 
     this.rootPath = workspaceFolders[0].uri.fsPath;
-    const possibleAppDirs = [
-      path.join(this.rootPath, "app"),
-      path.join(this.rootPath, "src", "app"),
-    ];
 
-    for (const dir of possibleAppDirs) {
-      if (fs.existsSync(dir)) {
-        this.appDirPath = dir;
-        break;
+    // Try "app" first, then "src/app"
+    const appDir = path.join(this.rootPath, "app");
+    if (fs.existsSync(appDir)) {
+      this.appDirPath = appDir;
+    } else {
+      const srcAppDir = path.join(this.rootPath, "src", "app");
+      if (fs.existsSync(srcAppDir)) {
+        this.appDirPath = srcAppDir;
       }
     }
   }
 
-  private scanAllRoutes(forceCollapsed: boolean = false): void {
+  private scanAllRoutes(): void {
     if (!this.appDirPath || !fs.existsSync(this.appDirPath)) return;
 
     this.visitedDirs.clear();
     this.routes = [];
-    this.findRouteFiles(this.appDirPath, "", undefined, forceCollapsed);
+    this.findRouteFiles(this.appDirPath, "");
     this.routes.sort((a, b) => a.label.localeCompare(b.label));
   }
 
   private findRouteFiles(
     dirPath: string,
     routePath: string,
-    parent?: RouteNode,
-    forceCollapsed: boolean = false
+    parent?: RouteNode
   ): void {
     if (!fs.existsSync(dirPath)) return;
 
+    // Use canonical paths to avoid duplicates
     const canonicalPath = fs.realpathSync(dirPath);
     if (this.visitedDirs.has(canonicalPath)) return;
     this.visitedDirs.add(canonicalPath);
 
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      let routeFile: fs.Dirent | undefined;
 
-    for (const entry of entries) {
-      const entryPath = path.join(dirPath, entry.name);
+      // First scan for route files and process directories
+      for (const entry of entries) {
+        const entryPath = path.join(dirPath, entry.name);
 
-      if (entry.isDirectory()) {
-        if (["node_modules", ".next", ".git"].includes(entry.name)) continue;
+        if (entry.isDirectory()) {
+          if (["node_modules", ".next", ".git"].includes(entry.name)) continue;
 
-        let pathSegment = entry.name;
-        if (entry.name.startsWith("(") && entry.name.endsWith(")")) {
-          this.findRouteFiles(entryPath, routePath, parent);
-          continue;
+          // Handle route groups (parentheses notation)
+          if (entry.name.startsWith("(") && entry.name.endsWith(")")) {
+            this.findRouteFiles(entryPath, routePath, parent);
+          } else {
+            const newRoutePath =
+              routePath +
+              (routePath && !routePath.endsWith("/") ? "/" : "") +
+              entry.name;
+            this.findRouteFiles(entryPath, newRoutePath, parent);
+          }
+        } else if (this.isRouteFile(entry.name)) {
+          routeFile = entry;
         }
+      }
 
-        const newRoutePath =
-          routePath +
-          (routePath && !routePath.endsWith("/") ? "/" : "") +
-          pathSegment;
-        this.findRouteFiles(entryPath, newRoutePath, parent);
-      } else if (this.isRouteFile(entry.name)) {
+      // Process route file if found
+      if (routeFile) {
+        const filePath = path.join(dirPath, routeFile.name);
         const displayPath = routePath || "/";
-        const methods = this.scanRouteHandlerMethods(entryPath);
+        const methods = this.scanRouteHandlerMethods(filePath);
 
         if (methods.length > 0) {
-          const collapsibleState = forceCollapsed
-            ? vscode.TreeItemCollapsibleState.Collapsed
-            : vscode.TreeItemCollapsibleState.Collapsed; // You can change this to use different default states if needed
-
           const routeNode = new RouteNode(
             displayPath,
-            collapsibleState,
+            vscode.TreeItemCollapsibleState.Collapsed,
             RouteNodeType.Route,
-            entryPath,
+            filePath,
             methods,
             undefined,
             displayPath,
@@ -209,65 +241,54 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
           );
 
           methods.forEach((method) => {
-            (method as any).parent = routeNode;
+            method.parent = routeNode;
           });
 
           this.routes.push(routeNode);
         }
       }
+    } catch (error) {
+      console.error(`Error processing directory ${dirPath}: ${error}`);
     }
   }
 
   private isRouteFile(filename: string): boolean {
-    return ["route.js", "route.ts", "route.jsx", "route.tsx"].includes(
-      filename
-    );
+    return /^route\.(js|ts|jsx|tsx)$/.test(filename);
   }
 
   private scanRouteHandlerMethods(filePath: string): RouteNode[] {
     try {
       const content = fs.readFileSync(filePath, "utf8");
-      const methods = [
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "PATCH",
-        "HEAD",
-        "OPTIONS",
-      ];
       const nodes: RouteNode[] = [];
+      const lines = content.split("\n");
 
-      for (const method of methods) {
-        const regex = new RegExp(`export\\s+const\\s+${method}\\s*=`, "i");
-        const match = content.match(regex);
+      // More efficient scanning - check each line once
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
 
-        if (match) {
-          const lines = content.split("\n");
-          let lineNumber = lines.findIndex((line) => line.match(regex));
-          lineNumber = lineNumber >= 0 ? lineNumber : 0;
-
-          nodes.push(
-            new RouteNode(
-              method,
-              vscode.TreeItemCollapsibleState.None,
-              RouteNodeType.HttpMethod,
-              filePath,
-              [],
-              lineNumber,
-              undefined,
-              undefined // Parent will be set later
-            )
-          );
+        // Check for HTTP method exports
+        for (const method of NextJsRoutesProvider.HTTP_METHODS) {
+          if (new RegExp(`export\\s+const\\s+${method}\\s*=`, "i").test(line)) {
+            nodes.push(
+              new RouteNode(
+                method,
+                vscode.TreeItemCollapsibleState.None,
+                RouteNodeType.HttpMethod,
+                filePath,
+                [],
+                i,
+                undefined
+              )
+            );
+            break; // Found method on this line, no need to check others
+          }
         }
       }
 
       return nodes;
     } catch (error) {
-      console.error(`Error scanning route handler: ${error}`);
+      console.error(`Error scanning route handler ${filePath}: ${error}`);
       return [];
     }
   }
-
-  // Remove the collapseAll method since we're using the tree view's built-in collapseAll
 }
