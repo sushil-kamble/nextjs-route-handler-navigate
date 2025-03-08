@@ -19,42 +19,42 @@
     "commands": [
       {
         "command": "nextjs-navigator.refreshRoutes",
-        "title": "Refresh Next.js Routes",
+        "title": "Next.js Navigator: Refresh Routes",
         "icon": "$(refresh)"
       },
       {
         "command": "nextjs-navigator.expandAll",
-        "title": "Expand All",
+        "title": "Next.js Navigator: Expand All",
         "icon": "$(expand-all)"
       },
       {
         "command": "nextjs-navigator.collapseAll",
-        "title": "Collapse All",
+        "title": "Next.js Navigator: Collapse All",
         "icon": "$(collapse-all)"
       },
       {
         "command": "nextjs-navigator.addRoute",
-        "title": "Add New Route",
+        "title": "Next.js Navigator: Create Route",
         "icon": "$(add)"
       },
       {
         "command": "nextjs-navigator.addChildRoute",
-        "title": "Add Child Route",
+        "title": "Next.js Navigator: Add Child Route",
         "icon": "$(add)"
       },
       {
         "command": "nextjs-navigator.copyRoute",
-        "title": "Copy Route Path",
+        "title": "Next.js Navigator: Copy Route Path",
         "icon": "$(copy)"
       },
       {
         "command": "nextjs-navigator.copyFilePath",
-        "title": "Copy File Path",
+        "title": "Next.js Navigator: Copy File Path",
         "icon": "$(file-symlink-file)"
       },
       {
         "command": "nextjs-navigator.deleteRoute",
-        "title": "Delete Route",
+        "title": "Next.js Navigator: Delete Route",
         "icon": "$(trash)"
       }
     ],
@@ -119,8 +119,45 @@
           "when": "view == nextjsRoutes && viewItem == route",
           "group": "3_deletion"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "nextjs-navigator.addRoute"
+        },
+        {
+          "command": "nextjs-navigator.refreshRoutes"
+        },
+        {
+          "command": "nextjs-navigator.expandAll"
+        },
+        {
+          "command": "nextjs-navigator.collapseAll"
+        },
+        {
+          "command": "nextjs-navigator.addChildRoute",
+          "when": "false"
+        },
+        {
+          "command": "nextjs-navigator.copyRoute",
+          "when": "false"
+        },
+        {
+          "command": "nextjs-navigator.copyFilePath",
+          "when": "false"
+        },
+        {
+          "command": "nextjs-navigator.deleteRoute",
+          "when": "false"
+        }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "nextjs-navigator.addRoute",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+ctrl+r"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
