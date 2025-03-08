@@ -8,6 +8,51 @@ Imagine you're working on an e-commerce platform. You might have routes like `/p
 
 This powerful tool provides an intuitive tree view in the activity sidebar, making it effortless to browse, create, and manage route handlers in your Next.js application.
 
+## Installation
+
+You can install Next.js Navigator in several ways:
+
+1. **VS Code Marketplace**:
+   - Open VS Code
+   - Click on the Extensions view icon on the Sidebar (or press `Ctrl+Shift+X` / `Cmd+Shift+X`)
+   - Search for "Next.js Navigator"
+   - Click on the "Install" button
+
+2. **Quick Open**:
+   - Press `Ctrl+P` / `Cmd+P` in VS Code
+   - Type `ext install nextjs-navigator` and press `Enter`
+
+3. **VS Code Web Marketplace**:
+   - Visit [Next.js Navigator on the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nextjs-navigator)
+   - Click "Install" to add it to your VS Code
+
+4. **From VSIX File**:
+   - Download the .vsix file
+   - In VS Code, go to Extensions view
+   - Click on the "..." menu (More Actions) at the top of the Extensions view
+   - Select "Install from VSIX..." and choose the downloaded file
+
+After installation, you'll see the Next.js Navigator icon in your activity bar.
+
+## Custom Installation
+If you want to build the extension from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/sushil-kamble/nextjs-route-handler-navigate
+
+# Navigate to project directory
+cd nextjs-route-handler-navigate
+
+# Install dependencies
+npm install
+
+# Generate VSIX package
+npm run vsce:generate
+```
+
+This will create a `.vsix` file in your project directory that you can install using VS Code.
+
 ## Features
 
 - **Smart Route Discovery**:
