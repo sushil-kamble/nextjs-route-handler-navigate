@@ -1100,7 +1100,51 @@ class RouteNode extends vscode.TreeItem {
           this.tooltip = `${routePath} (${filePath})`;
         }
         break;
-      // ...existing cases...
+      case RouteNodeType.HttpMethod:
+        // Add HTTP method icons
+        this.contextValue = "httpMethod";
+
+        // Set method specific icons
+        switch (httpMethod) {
+          case "GET":
+            this.iconPath = new vscode.ThemeIcon(
+              "symbol-method",
+              new vscode.ThemeColor("charts.green")
+            );
+            break;
+          case "POST":
+            this.iconPath = new vscode.ThemeIcon(
+              "add",
+              new vscode.ThemeColor("charts.blue")
+            );
+            break;
+          case "PUT":
+            this.iconPath = new vscode.ThemeIcon(
+              "replace-all",
+              new vscode.ThemeColor("charts.orange")
+            );
+            break;
+          case "DELETE":
+            this.iconPath = new vscode.ThemeIcon(
+              "trash",
+              new vscode.ThemeColor("charts.red")
+            );
+            break;
+          case "PATCH":
+            this.iconPath = new vscode.ThemeIcon(
+              "edit",
+              new vscode.ThemeColor("charts.purple")
+            );
+            break;
+          default:
+            this.iconPath = new vscode.ThemeIcon("symbol-method");
+            break;
+        }
+        break;
+      case RouteNodeType.Error:
+        this.iconPath = new vscode.ThemeIcon("error");
+        this.contextValue = "error";
+        break;
     }
   }
 }
