@@ -31,6 +31,11 @@
         "command": "nextjs-navigator.collapseAll",
         "title": "Collapse All",
         "icon": "$(collapse-all)"
+      },
+      {
+        "command": "nextjs-navigator.addRoute",
+        "title": "Add New Route",
+        "icon": "$(add)"
       }
     ],
     "viewsContainers": {
@@ -64,6 +69,11 @@
         },
         {
           "command": "nextjs-navigator.collapseAll",
+          "when": "view == nextjsRoutes",
+          "group": "navigation"
+        },
+        {
+          "command": "nextjs-navigator.addRoute",
           "when": "view == nextjsRoutes",
           "group": "navigation"
         }

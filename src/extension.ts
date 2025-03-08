@@ -32,6 +32,155 @@ function hasAppDirectory(workspacePath: string): boolean {
   );
 }
 
+// Add route creation functionality
+async function createNewRoute(appDirPath: string): Promise<void> {
+  // Ask for the route path input
+  const input = await vscode.window.showInputBox({
+    placeHolder: "e.g., /api/hello or /products/[id]:POST",
+    prompt:
+      "Enter route path (optionally followed by :METHOD, defaults to GET)",
+    validateInput: (value) => {
+      if (value.includes(":")) {
+        const method = value.split(":").pop()?.toUpperCase();
+        if (
+          ![
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH",
+            "HEAD",
+            "OPTIONS",
+          ].includes(method!)
+        ) {
+          return "Valid methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS";
+        }
+      }
+      return null;
+    },
+  });
+
+  if (!input) return; // User canceled
+
+  try {
+    // Parse input to extract path and method (defaults to GET)
+    let routePath: string;
+    let method: string = "GET"; // Default method is GET
+
+    if (input.includes(":")) {
+      const parts = input.split(":");
+      routePath = parts[0];
+      method = parts[1].toUpperCase();
+    } else {
+      routePath = input;
+    }
+
+    // Clean up route path
+    const cleanPath = routePath.startsWith("/")
+      ? routePath.substring(1)
+      : routePath;
+
+    // Create the directory structure
+    const routeDir = path.join(appDirPath, ...cleanPath.split("/"));
+
+    // Check if directory exists, create if it doesn't
+    if (!fs.existsSync(routeDir)) {
+      fs.mkdirSync(routeDir, { recursive: true });
+    }
+
+    // Determine file type based on existing files in the project
+    const fileExtension = detectProjectFileType(appDirPath);
+
+    const routeFilePath = path.join(routeDir, `route.${fileExtension}`);
+
+    // Check if file already exists
+    if (fs.existsSync(routeFilePath)) {
+      // If the file exists, check if the method is already defined
+      const content = fs.readFileSync(routeFilePath, "utf-8");
+      if (content.includes(`export async function ${method}`)) {
+        vscode.window.showWarningMessage(
+          `Method ${method} already exists in ${routeFilePath}`
+        );
+        return;
+      }
+
+      // Append the new method to the existing file
+      const newMethod = generateRouteHandler(method, fileExtension);
+      fs.appendFileSync(routeFilePath, `\n\n${newMethod}`);
+    } else {
+      // Create new route file with the method
+      const routeContent = generateRouteFile(method, fileExtension);
+      fs.writeFileSync(routeFilePath, routeContent);
+    }
+
+    // Open the file in editor
+    const document = await vscode.workspace.openTextDocument(routeFilePath);
+    await vscode.window.showTextDocument(document);
+
+    // Refresh the routes tree view
+    vscode.commands.executeCommand("nextjs-navigator.refreshRoutes");
+
+    vscode.window.showInformationMessage(
+      `Route ${routePath}:${method} created successfully`
+    );
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to create route: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+// Helper function to detect file type
+function detectProjectFileType(appDirPath: string): string {
+  // Check if TypeScript is used in the project
+  const tsFiles = findFiles(appDirPath, /\.(ts|tsx)$/);
+  return tsFiles.length > 0 ? "ts" : "js";
+}
+
+// Helper function to find files with specific pattern
+function findFiles(dirPath: string, pattern: RegExp, maxFiles = 5): string[] {
+  if (!fs.existsSync(dirPath)) return [];
+
+  const results: string[] = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (results.length >= maxFiles) break;
+
+    const entryPath = path.join(dirPath, entry.name);
+    if (
+      entry.isDirectory() &&
+      !["node_modules", ".next", ".git"].includes(entry.name)
+    ) {
+      results.push(...findFiles(entryPath, pattern, maxFiles - results.length));
+    } else if (pattern.test(entry.name)) {
+      results.push(entryPath);
+    }
+  }
+
+  return results;
+}
+
+// Generate route handler function for a method
+function generateRouteHandler(method: string, fileExt: string): string {
+  const typeDef = fileExt === "ts" ? "(request: NextRequest)" : "(request)";
+  return `export const ${method} = ${typeDef} => {
+  return NextResponse.json({ message: 'Hello from Next.js!' });
+};`;
+}
+
+// Generate complete route file
+function generateRouteFile(method: string, fileExt: string): string {
+  const imports =
+    fileExt === "ts"
+      ? "import { NextRequest, NextResponse } from 'next/server';\n\n"
+      : "";
+
+  return `${imports}${generateRouteHandler(method, fileExt)}`;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders) {
@@ -95,6 +244,15 @@ export function activate(context: vscode.ExtensionContext) {
         "workbench.actions.treeView.nextjsRoutes.collapseAll"
       );
     }),
+    vscode.commands.registerCommand("nextjs-navigator.addRoute", () => {
+      if (nextJsRoutesProvider.appDirPath) {
+        createNewRoute(nextJsRoutesProvider.appDirPath);
+      } else {
+        vscode.window.showErrorMessage(
+          "App directory not found. Is this a Next.js project with App Router?"
+        );
+      }
+    }),
     treeView
   );
 }
@@ -153,7 +311,7 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private rootPath?: string;
-  private appDirPath?: string;
+  public appDirPath?: string;
   private visitedDirs = new Set<string>();
   private routes: RouteNode[] = [];
 
@@ -312,7 +470,14 @@ class NextJsRoutesProvider implements vscode.TreeDataProvider<RouteNode> {
 
         // Check for HTTP method exports
         for (const method of NextJsRoutesProvider.HTTP_METHODS) {
-          if (new RegExp(`export\\s+const\\s+${method}\\s*=`, "i").test(line)) {
+          // Updated regex to match both arrow functions and function declarations
+          // Handles both export const GET = ... and export async function GET() formats
+          if (
+            new RegExp(
+              `export\\s+(async\\s+)?((const\\s+${method}\\s*=)|(function\\s+${method}\\s*\\())`,
+              "i"
+            ).test(line)
+          ) {
             nodes.push(
               new RouteNode(
                 method,
