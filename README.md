@@ -6,29 +6,36 @@
 
 ## Features
 
-- **Smart Route Discovery**: 
+- **Smart Route Discovery**:
+
   - Automatically detects route handlers in both `app` and `src/app` directories
   - Supports route groups using the (parentheses) notation
   - Intelligently handles dynamic routes `[param]`, catch-all routes `[...param]`, and optional catch-all routes `[[...param]]`
   - Ignores private directories (prefixed with underscore `_`)
 
 - **Comprehensive HTTP Method Support**:
+
   - Displays all supported HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
-  - Visual indicators for different HTTP methods
+  - Visual indicators for different HTTP methods with color-coded icons
   - Direct file navigation with line-specific jumping to method definitions
+  - Method-specific tooltips with descriptions
 
 - **Route Management**:
+
   - Create new routes with `/path/to/route:METHOD` syntax
   - Add child routes to existing routes
   - Copy route paths to clipboard
   - Copy file paths to clipboard
   - Delete route handlers with confirmation dialog
+  - Rename routes with automatic file system updates
 
 - **Visual Features**:
+
   - Different icons for static routes, dynamic routes, and catch-all routes
   - Tree view structure with collapsible/expandable segments
   - Method-level navigation with precise cursor positioning
   - Tooltips showing complete route information
+  - Color-coded method icons for better visibility
 
 - **Real-time Updates**:
   - Automatic refresh when files are created, changed, or deleted
@@ -44,6 +51,7 @@
    - Click on HTTP methods to jump to their definitions in code
    - Right-click on routes for context menu actions
    - Use the toolbar buttons to refresh, expand all, collapse all, or create new routes
+   - Use the path syntax `/path/to/route:METHOD` to create routes with specific HTTP methods
 
 ## Commands
 
@@ -60,6 +68,7 @@ Additionally, the following commands are available in the context menu:
 - `Copy Route Path` - Copy the route path to the clipboard
 - `Copy File Path` - Copy the file path to the clipboard
 - `Delete Route` - Delete the selected route
+- `Rename Route` - Rename or move the selected route
 
 ## Keyboard Shortcuts
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+
+- Added route renaming functionality with method preservation
+- Added smart HTTP method merging when renaming to existing routes
+- Added method-specific tooltips with descriptions
+- Enhanced visual indicators:
+  - Color-coded HTTP method icons
+  - Distinct icons for static, dynamic, and catch-all routes
+- Improved file system operations with better error handling
+- Added workspace-relative path support for file path copying
+
 ## 1.1.0
 
 - Added new commands for route management:
