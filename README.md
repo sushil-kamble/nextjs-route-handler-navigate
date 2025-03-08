@@ -1,89 +1,79 @@
-# Nextjs: Route Handler Navigator
+# Next.js Navigator
 
 ## Description
 
-The **Nextjs: Route Handler Navigator** is a VS Code extension that enhances navigation within Next.js App Router projects. This powerful tool provides an intuitive tree view in the Explorer panel, making it effortless to browse and manage route handlers in your Next.js application.
+**Next.js Navigator** is a VS Code extension that enhances navigation within Next.js App Router projects. This powerful tool provides an intuitive tree view in the activity sidebar, making it effortless to browse, create, and manage route handlers in your Next.js application.
 
 ## Features
 
 - **Smart Route Discovery**: 
   - Automatically detects route handlers in both `app` and `src/app` directories
   - Supports route groups using the (parentheses) notation
-  - Ignores non-route directories (node_modules, .git, .next)
+  - Intelligently handles dynamic routes `[param]`, catch-all routes `[...param]`, and optional catch-all routes `[[...param]]`
+  - Ignores private directories (prefixed with underscore `_`)
 
 - **Comprehensive HTTP Method Support**:
   - Displays all supported HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
   - Visual indicators for different HTTP methods
   - Direct file navigation with line-specific jumping to method definitions
 
-- **Real-time Updates**:
-  - Optimized file watching with debounced updates
-  - Intelligent refresh system that only updates changed routes
-  - Minimal system resource usage
+- **Route Management**:
+  - Create new routes with `/path/to/route:METHOD` syntax
+  - Add child routes to existing routes
+  - Copy route paths to clipboard
+  - Copy file paths to clipboard
+  - Delete route handlers with confirmation dialog
 
-- **Enhanced Navigation Features**:
-  - Click-to-navigate to specific route handlers
+- **Visual Features**:
+  - Different icons for static routes, dynamic routes, and catch-all routes
+  - Tree view structure with collapsible/expandable segments
   - Method-level navigation with precise cursor positioning
-  - Full route path display with tooltips
-  - Hierarchical route structure visualization
+  - Tooltips showing complete route information
 
-- **User Interface**:
-  - Clean and intuitive tree view layout
-  - Custom icons for routes and HTTP methods
-  - Collapsible/expandable route segments
-  - Route grouping for better organization
+- **Real-time Updates**:
+  - Automatic refresh when files are created, changed, or deleted
+  - Manual refresh option
+  - Expand/collapse all routes
 
-## Technical Implementation
+## How to Use
 
-- **Stack**:
-  - TypeScript for type-safe code
-  - VS Code Extension API
-  - Node.js file system operations
-  - Event-driven architecture
-
-- **Key Solutions**:
-  - Efficient file system watching using VS Code's FileSystemWatcher
-  - Debounced refresh mechanism to prevent excessive updates
-  - Canonical path resolution to avoid duplicates
-  - Optimized route scanning with minimal file reads
-  - Memory-efficient route tree structure
-
-## Usage
-
-1. Install the extension from the VS Code Marketplace
-2. Open a Next.js project using the App Router architecture
-3. Access the "Next.js Routes" view in the Explorer panel
-4. Navigate through your routes:
-   - Click on routes to expand/collapse
-   - Click on HTTP methods to jump to their definitions
-   - Use the context menu for additional actions
+1. Open a Next.js project using the App Router architecture
+2. Access the "Next.js Navigator" view in the Activity Bar
+3. Browse through your routes in the tree view
+4. Use the following actions:
+   - Click on HTTP methods to jump to their definitions in code
+   - Right-click on routes for context menu actions
+   - Use the toolbar buttons to refresh, expand all, collapse all, or create new routes
 
 ## Commands
 
-Access these commands through the Command Palette (Ctrl/Cmd + Shift + P):
+All commands are available in the VS Code Command Palette (Ctrl/Cmd + Shift + P):
 
-- `Nextjs: Route Handler Navigate: Refresh Routes` - Manually refresh the route list
+- `Next.js Navigator: Refresh Routes` - Manually refresh the route list
+- `Next.js Navigator: Expand All` - Expand all routes in the tree view
+- `Next.js Navigator: Collapse All` - Collapse all routes in the tree view
+- `Next.js Navigator: Create Route` - Create a new route
 
-## Performance Considerations
+Additionally, the following commands are available in the context menu:
 
-- Implements lazy loading for route scanning
-- Uses caching to prevent unnecessary file operations
-- Optimized file watching patterns
-- Debounced updates to prevent refresh spam
+- `Add Child Route` - Add a child route to the selected route
+- `Copy Route Path` - Copy the route path to the clipboard
+- `Copy File Path` - Copy the file path to the clipboard
+- `Delete Route` - Delete the selected route
+
+## Keyboard Shortcuts
+
+- `Ctrl+Shift+Alt+R` (`Cmd+Shift+Ctrl+R` on Mac) - Create a new route
+
+## Requirements
+
+- Visual Studio Code v1.80.0 or higher
+- Next.js project using the App Router architecture
 
 ## Contributing
 
-We welcome contributions! To contribute:
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request with detailed description
-4. Follow the existing code style
+We welcome contributions! Feel free to submit issues or pull requests on our repository.
 
 ## License
 
-[MIT License] - See LICENSE file for details
-
-## Support
-
-If you encounter any issues or have suggestions, please file them in the GitHub repository's issue tracker.
+This extension is available under the MIT License.
